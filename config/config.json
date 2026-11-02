@@ -1,0 +1,5 @@
+{
+  "log_file": "app.log",
+  "rules": ["ERROR", "timeout", "OOM"],
+  "channels": ["钉钉", "飞书", "企业微信"]
+}

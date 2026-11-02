@@ -1,0 +1,3 @@
+INFO 系统正常
+ERROR 数据库连不上
+timeout API超时
