@@ -1,0 +1,31 @@
+services:
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: knowledge_base
+      MYSQL_USER: shenk
+      MYSQL_PASSWORD: shenkpass
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./d16_sql/schema.sql:/docker-entrypoint-initdb.d/schema.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-prootpass"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: ./d15_api
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: mysql+pymysql://shenk:shenkpass@mysql:3306/knowledge_base
+    depends_on:
+      mysql:
+        condition: service_healthy
+
+volumes:
+  mysql_data:
