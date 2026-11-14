@@ -139,21 +139,37 @@ def parse_all(docs_dir: str) -> list[dict]:
     return results
 
 if __name__ == "__main__":
-    print("🚀 开始解析...")
+    import time
+    from collections import Counter
+    
+    print("="*50)
+    print("🚀 启动 RAG 知识库 ETL 数据流水线...")
+    start_time = time.time()
+    
+    # 1. 执行解析
     all_data = parse_all("d19_docs")
     
-    # --- 新增：写出 JSONL ---
+    # 2. 写出 JSONL
     output_file = "d19_parsed.jsonl"
     with open(output_file, "w", encoding="utf-8") as f:
         for item in all_data:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
             
-    print(f"✅ 解析完成！成功生成 {len(all_data)} 条记录。")
-    print(f"📁 结果已保存到: {output_file}")
+    # 3. 统计报表 (这才是大厂高级感)
+    process_time = time.time() - start_time
+    formats = Counter([item["format"] for item in all_data])
+    qualities = Counter([item["quality"] for item in all_data])
     
-    # 打印前 3 条看看效果
-    for i, item in enumerate(all_data[:3]):
-        print(f"\n--- 记录 {i+1} ---")
-        print(f"来源: {item['source']}")
-        print(f"格式: {item['format']} | 质量: {item['quality']}")
-        print(f"内容摘要: {item['text'][:100]}...") # 只打印前100个字符
+    print("-" * 50)
+    print(f"✅ 数据解析完毕！总耗时: {process_time:.2f} 秒")
+    print(f"📊 数据处理总览:")
+    print(f"   - 总提取文本块: {len(all_data)} 条")
+    print(f"   - 文件格式分布: {dict(formats)}")
+    print(f"   - 质量评分分布: {dict(qualities)}")
+    
+    if qualities.get("error", 0) > 0 or qualities.get("low", 0) > 0:
+        print(f"⚠️ 警告: 发现 {qualities.get('error', 0) + qualities.get('low', 0)} 条低质量或异常数据 (详情见 d19_parsing_issues.md)")
+    
+    print("-" * 50)
+    print(f"📁 结构化数据已保存至: {output_file}")
+    print("="*50)
