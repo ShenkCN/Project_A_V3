@@ -46,7 +46,7 @@ Project_A_V3/
 启动问答：python d21_cli_rag.py
 
 ##📁 6.目录与文件解析（方便复习）
-chroma_db/：（核心） 存放向量化后的知识库数据。明天写 FastAPI 时直接读取它。
+chroma_db/：（核心） 存放向量化后的知识库数据。
 
 d14_task/, d14_refactor/, d15_http/：D14-D15 练习文件夹，用于巩固 Linux 和早期 FastAPI 基础，面试时作为“工程基本功”提及即可。
 
