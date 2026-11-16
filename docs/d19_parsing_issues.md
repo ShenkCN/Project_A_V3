@@ -1,79 +1,4 @@
 # D19 文档解析与清洗异常记录 (Parsing Issues Log)
-## 🎯 背景说明
-在构建 RAG 知识库时，文档解析是第一道防线。真实的业务文档往往存在各种格式问题、编码问题和脏数据。本文档记录在 D19 阶段，针对 PDF、Word、Markdown 进行自动化解析时遇到的异常现象、根因排查以及降级处理策略。核心原则：**任何一个坏文件都不能拖垮整个解析流水线。**
----
-## 🚨 异常 1：伪造/损坏的 PDF 文件导致解析崩溃
-- **现象**：程序运行到 `fake_pdf.pdf` 时，终端打印 `❌ 解析崩溃跳过: fake_pdf.pdf | 原因: EOF marker not found`。如果不加拦截，整个解析进程会直接抛出 `PdfReadError` 并终止。
-- **排查**：使用 `file fake_pdf.pdf` 命令检查，或者用文本编辑器打开，发现文件内容实际是纯文本，根本不是真正的 PDF 二进制文件。
-- **根因**：PDF 文件必须包含 `%PDF` 文件头和 `%%EOF` 结尾标记。`pypdf` 库在读取时会严格校验文件结构，找不到标记直接报错。
-- **修复/降级**：在 `parse_all` 遍历文件的循环中，加入 `try-except` 兜底。捕获异常后，为该文件生成一条 `quality="error"` 的记录，附带 `error_msg`，然后 `continue` 继续解析下一个文件。
----
-## 🚨 异常 2：损坏的 Word 文件导致解压失败
-- **现象**：程序运行到 `broken_word.docx` 时，终端打印 `❌ 解析崩溃跳过: broken_word.docx | 原因: PackageNotFoundError`。
-- **排查**：`.docx` 本质是一个 ZIP 压缩包（里面包含 XML）。`python-docx` 底层会去解压它。
-- **根因**：由于文件被恶意篡改或下载中断，ZIP 文件头损坏，导致解压失败抛出 `PackageNotFoundError`。
-- **修复/降级**：同异常 1，通过 `try-except` 拦截，将此文件标记为 `quality="error"` 并跳过，保证其他正常的 Word 文档能被继续解析。
----
-## 🚨 异常 3：编码不匹配导致乱码或读取崩溃
-- **现象**：程序运行到 `gbk_test.md` 时，终端打印 `❌ 解析崩溃跳过: gbk_test.md | 原因: 'utf-8' codec can't decode byte...`。
-- **排查**：代码中使用了 `open(file_path, encoding="utf-8")`。由于该文件是 Windows 下默认保存的 GBK 编码，包含中文字符，强行用 UTF-8 读取直接报错。
-- **根因**：不同操作系统或编辑器保存的文件编码不一致。
-- **修复/降级**：
-  - **当前策略**：捕获 `UnicodeDecodeError`，将该文件记录为 `quality="error"`，跳过解析。
-  - **未来优化**：引入 `chardet` 库动态探测文件编码后再读取；或者在读取时加上 `errors="ignore"`（不推荐，容易丢失关键信息，目前选择宁可报错也不产生半截乱码）。
----
-## 🚨 异常 4：Markdown 页眉/水印等脏数据混入正文
-- **现象**：测试文件 `dirty_test.md` 中包含 `【内部资料，严禁外传】第 1 页 共 3 页` 和 `Copyright © 2026 汉堡王 IT 部` 等页眉页脚。解析成纯文本后，这些无意义字符完美混入正文，且占据了大量字符空间。
-- **排查**：Markdown 解析器（如 `markdown-it`）只负责剥离语法标记（如 `#`、`**`），不懂业务语义。
-- **根因**：RAG 检索极其依赖文本纯净度。如果这些水印进入向量库，会导致：
-  1. 浪费 Token 成本。
-  2. 干扰向量相似度计算（用户问“怎么修屏幕”，召回结果里全是“严禁外传”，导致检索精度下降）。
-- **修复/降级**：在 `clean_text(text)` 函数中引入正则替换和行级过滤：
-  1. 通过 `if "内部资料，严禁外传" in line: continue` 过滤特指水印。
-  2. 通过 `re.search(r'第\s*\d+\s*页\s*共\s*\d+\s*页', line)` 过滤通用页码。
----
-## 💡 面试话术准备（基于本记录）
-> “面试官您好，在开发 RAG 系统的数据解析模块时，我发现真实的企业文档非常‘脏’。比如 PDF 是扫描件或伪造的，Word 文件损坏无法解压，或者代码因编码不一致（GBK/UTF-8）直接报错。
-> 
-> 所以我做了一个**高可用解析流水线**。核心逻辑是：**每个文件的解析必须被 `try-except` 包裹**，失败的文件我会记录一个 `quality=error` 的状态并降级跳过，绝不让单个坏文件阻塞其他 20 个文件。
-> 
-> 同时，对于成功解析的文件，我会做一层**正则清洗**。因为像页眉、版权声明这种水印，如果不洗掉，一旦进入向量库，就会严重干扰检索的召回率和答案准确性。我的原则是：**宁可让问题暴露在质量分上，也不让脏数据进向量库。**”
-
-
-📁 输入层 (Raw Documents)
- ├── 📄 PDF 文档 (SOP手册/排障报告)
- ├── 📝 Word 文档 (规范/流程)
- └── 📋 Markdown 文档 (技术笔记/速查表)
-       │
-       ▼
-🔧 解析层 (Parsing Engines)
- ├── pypdf (提取 PDF 文本，按页切割)
- ├── python-docx (提取 Word 段落 + 表格)
- └── markdown-it (将 MD 转为纯文本 Token)
-       │
-       ▼
-🧹 清洗层 (Text Cleaning)
- ├── 移除特定噪声 (如: "内部资料"、"Copyright")
- ├── 正则过滤页眉页脚 (如: "第 X 页 共 Y 页")
- ├── 合并连续空行 (压缩多余换行符)
- └── 保留 Markdown 标题边界 (为了后续按结构切分)
-       │
-       ▼
-⭐ 质量评估 (Quality Check)
- ├── 长度 < 20 字符  --> 标记 [quality: low]
- ├── 乱码字符 > 10%  --> 标记 [quality: low]
- └── 解析抛出异常    --> 标记 [quality: error]
-       │
-       ▼
-📦 输出层 (Structured Data)
- └── 生成 d19_parsed.jsonl (每行一条 JSON 记录)
-      ├── text: "清洗后的干净文本"
-      ├── source: "d19_docs/xxx.pdf"
-      ├── page: 1
-      ├── title: "xxx"
-      ├── format: "pdf/md/docx"
-└── quality: "ok/low/error"
-
 一、大厂 AI 应用交付/开发岗在 D19 看什么
 AI 应用开发岗的 JD 里，RAG 流程的第一环写得很明确：文档解析 → 切片 → 向量化 → 检索 → Prompt 注入。交付/实施岗更关注“落地最后一公里”：文档质量检测优先，不能用同一种方式处理所有企业文档。﻿﻿
 面试官在 D19 对应的考核点很集中：
@@ -321,7 +246,7 @@ def parse_md(file_path: Path) -> list[dict]:
     except Exception as e:
         print(f"[报错] Markdown解析失败 {file_path}: {e}")
     return records
-
+﻿
 # 2. 升级 clean_text：用正则干掉页眉页脚
 def clean_text(text: str) -> str:
     if not text:
@@ -361,7 +286,7 @@ def check_quality(text: str) -> str:
     if bad_chars / len(text) > 0.1:
         return "low"
     return "ok"
-
+﻿
 # 修改 parse_all，加入质量评分
 def parse_all(docs_dir: str) -> list[dict]:
     results = []
@@ -402,13 +327,13 @@ def parse_all(docs_dir: str) -> list[dict]:
 打开终端，运行以下命令：
 bash
 cd ~/Project_A_V3/d19_docs
-
+﻿
 # 1. 造一个空 PDF（或者把非 PDF 文件改成后缀）
 echo "I am not a pdf" > fake_pdf.pdf
-
+﻿
 # 2. 造一个损坏的 Word
 echo "fake docx" > broken_word.docx
-
+﻿
 # 3. 造一个 GBK 编码的 Markdown（你的代码用 utf-8 读肯定报错）
 echo "这是中文GBK编码" | iconv -f utf-8 -t gbk > gbk_test.md
 现在，回到根目录 ~/Project_A_V3，再次运行：
@@ -437,4 +362,4 @@ if __name__ == "__main__":
 1. 提交代码和交付物：
 bash
 git add d19_docs/ ingest.py d19_parsed.jsonl d19_parsing_issues.md docs/rag_d19_architecture.png
-git commit -m "D19: RAG overview + multi-format document parsing/cleaning (PDF/DOCX/MD) + parsing issues log"
+git commit -m "D19: RAG overview + multi-format document parsing/cleaning (PDF/DOCX/MD) + parsing issues log"﻿

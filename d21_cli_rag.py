@@ -18,6 +18,9 @@ from openai import OpenAI, APITimeoutError, RateLimitError
 # 1. 初始化组件
 # ==========================================
 print("正在加载本地向量数据库和模型...")
+
+response = client_llm.chat.completions.create(...)
+print(f"本次实际调用的模型版本: {response.model}")
 # [复习 D20] 加载向量模型和 Chroma 数据库
 model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
 client_db = chromadb.PersistentClient(path="./chroma_db")

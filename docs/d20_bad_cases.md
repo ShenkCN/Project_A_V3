@@ -1,3 +1,4 @@
+
 🚀 D20 总结：从“物理切分”到“向量检索”，赋予机器语义理解力（P3 阶段：RAG v1）
 🎯 一、今日战果（产出清单）
 今天我们把昨天解析好的纯文本，彻底变成了机器能看懂的“向量知识库”，并第一次用数据量化了检索效果：
@@ -39,10 +40,9 @@ Bad Case 5：同义词陷阱（Embedding 语义理解问题）
 排查：在向量空间里，“授权”和“账号”高度相关，但“授权失败”通常指鉴权 Token 问题，而“账号锁定”是另一条业务线。
 根因：遇到特定领域的黑话/行话，纯向量检索容易混淆“相关”和“精确”。
 改进方向：这正是混合检索（BM25 + 向量） 的用武之地。引入关键词精确匹配（BM25），就能把包含“Token”这个词的文档权重拉高。D26 开搞！
-
-
-二、上午（3h）：Chunking 策略与 Embedding 选型
 ﻿
+﻿
+上午（3h）：Chunking 策略与 Embedding 选型
 🧠 第一块：Chunking 策略（理论认知）
 为什么不能把一整篇文档直接丢给 AI？
 因为大模型有“上下文窗口限制”，而且你如果把 5000 字的排障手册全塞进去，Token 费用极高，并且大模型会被无关信息干扰，找不到重点。
@@ -65,31 +65,31 @@ pip install sentence-transformers chromadb scikit-learn
 python
 from sentence_transformers import SentenceTransformer
 from sklearn.metrics.pairwise import cosine_similarity
-﻿
+�
 print("正在加载 Embedding 模型 (BAAI/bge-small-zh-v1.5)...")
 # 第一次运行会自动从 HuggingFace 下载模型，大概 100MB 左右
 model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
-﻿
+�
 # 准备三句话：一句问句，两句候选文档
 query = "屏幕不显示怎么办？"
 docs = [
-    "打印机卡纸时，请先断电，再打开后盖取出纸张。",
-    "电子餐牌黑屏不亮，请检查 HDMI 线是否松动，或者电源是否插紧。",
-    "员工申请年假，请直接登录 OA 系统提交审批。"
+    "打印机卡纸时，请先断电，再打开后盖取出纸张。",
+    "电子餐牌黑屏不亮，请检查 HDMI 线是否松动，或者电源是否插紧。",
+    "员工申请年假，请直接登录 OA 系统提交审批。"
 ]
-﻿
+�
 print("正在把文本转换成向量...")
 # 把问句和文档全部转成 512 维的向量
 query_vec = model.encode(query)
 docs_vecs = model.encode(docs)
-﻿
+�
 # 计算问句和每个文档的余弦相似度
 # query_vec 需要转成二维数组才能算相似度
 similarities = cosine_similarity([query_vec], docs_vecs)[0]
-﻿
+�
 print("\n=== 检索结果 ===")
 for i, doc in enumerate(docs):
-    print(f"相似度得分: {similarities[i]:.4f} | 文档内容: {doc}")
+    print(f"相似度得分: {similarities[i]:.4f} | 文档内容: {doc}")
 第三步：运行并观察
 在终端运行 python d20_embedding_test.py。
 ⚠️ 避坑提示：如果你在国内，可能会卡在“下载模型”这一步报错或超时。如果卡住超过 2 分钟，请在终端按 Ctrl+C 中断，然后在运行命令前加上镜像环境变量，像这样：
@@ -115,94 +115,94 @@ python
 import os
 # 防止下载模型卡住（如果你上午没加，这里一定要加）
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-
+﻿
 import json
 import re
 import chromadb
 from sentence_transformers import SentenceTransformer
-
+﻿
 # ================= 1. 定义我们的递归切分算法 =================
 def recursive_split(text: str, chunk_size: int = 500, overlap: int = 80) -> list[str]:
-    """
-    大厂标准的递归切分：优先按段落切，切不开再按句号，再切不开按逗号
-    """
-    seps = ["\n\n", "\n", "。", "！", "？", "，", " "]
-    chunks = []
-    start = 0
-    
-    while start < len(text):
-        end = min(start + chunk_size, len(text))
-        
-        # 如果还没到文件末尾，尽量找一个自然边界切开
-        if end < len(text):
-            for sep in seps:
-                # rfind 从右往左找，尽量把边界包进来
-                pos = text.rfind(sep, start, end)
-                if pos != -1 and pos > start:
-                    end = pos + len(sep)
-                    break
-                    
-        chunk = text[start:end].strip()
-        if chunk:
-            chunks.append(chunk)
-            
-        # 核心逻辑：滑动窗口。下一次从 (当前结束位置 - overlap) 开始
-        # 如果 end 已经到末尾了，就没必要再切了，直接跳出循环
-        start = end - overlap if end < len(text) else end
-        
-    return chunks
-
+    """
+    大厂标准的递归切分：优先按段落切，切不开再按句号，再切不开按逗号
+    """
+    seps = ["\n\n", "\n", "。", "！", "？", "，", " "]
+    chunks = []
+    start = 0
+    
+    while start < len(text):
+        end = min(start + chunk_size, len(text))
+        
+        # 如果还没到文件末尾，尽量找一个自然边界切开
+        if end < len(text):
+            for sep in seps:
+                # rfind 从右往左找，尽量把边界包进来
+                pos = text.rfind(sep, start, end)
+                if pos != -1 and pos > start:
+                    end = pos + len(sep)
+                    break
+                    
+        chunk = text[start:end].strip()
+        if chunk:
+            chunks.append(chunk)
+            
+        # 核心逻辑：滑动窗口。下一次从 (当前结束位置 - overlap) 开始
+        # 如果 end 已经到末尾了，就没必要再切了，直接跳出循环
+        start = end - overlap if end < len(text) else end
+        
+    return chunks
+﻿
 # ================= 2. 准备环境 =================
 print("🚀 正在加载 Embedding 模型...")
 model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
-
+﻿
 # 创建本地的向量数据库文件夹
 print("📦 正在连接/创建 Chroma 向量数据库...")
 client = chromadb.PersistentClient(path="./chroma_db")
 # 每次跑之前先清空，防止重复添加
 client.delete_collection(name="sop_knowledge_base") 
 collection = client.create_collection(
-    name="sop_knowledge_base", 
-    metadata={"hnsw:space": "cosine"} # 声明我们用余弦相似度
+    name="sop_knowledge_base", 
+    metadata={"hnsw:space": "cosine"} # 声明我们用余弦相似度
 )
-
+﻿
 # ================= 3. 读取 D19 数据，切分并组装 =================
 print("✂️ 正在读取并切分 D19 数据...")
 records = []
 with open("d19_parsed.jsonl", "r", encoding="utf-8") as f:
-    for line in f:
-        data = json.loads(line)
-        # 只处理质量为 ok 的文档
-        if data.get("quality") == "ok":
-            chunks = recursive_split(data["text"])
-            for i, chunk in enumerate(chunks):
-                records.append({
-                    "text": chunk,
-                    "source": data["source"],
-                    "page": data.get("page", 1),
-                    "title": data.get("title", ""),
-                    "chunk_index": i,
-                })
-
+    for line in f:
+        data = json.loads(line)
+        # 只处理质量为 ok 的文档
+        if data.get("quality") == "ok":
+            chunks = recursive_split(data["text"])
+            for i, chunk in enumerate(chunks):
+                records.append({
+                    "text": chunk,
+                    "source": data["source"],
+                    "page": data.get("page", 1),
+                    "title": data.get("title", ""),
+                    "chunk_index": i,
+                })
+﻿
 print(f"✅ 切分完成！共生成 {len(records)} 个文本块 (Chunks)")
-
+﻿
 # ================= 4. 转换为向量并写入 Chroma =================
 texts = [r["text"] for r in records]
 metadatas = [{"source": r["source"], "page": r["page"], "chunk_index": r["chunk_index"]} for r in records]
 # 生成唯一ID，防止冲突
 ids = [f"{r['source']}_chunk_{r['chunk_index']}" for r in records]
-
+﻿
 print("🧠 正在将文本转换为 512 维向量（这可能需要几秒钟）...")
 embeddings = model.encode(texts).tolist()
-
+﻿
 print("💾 正在写入向量数据库...")
 collection.add(
-    documents=texts,
-    embeddings=embeddings,
-    metadatas=metadatas,
-    ids=ids
+    documents=texts,
+    embeddings=embeddings,
+    metadatas=metadatas,
+    ids=ids
 )
-
+﻿
 print(f"🎉 入库成功！当前数据库中总共有 {collection.count()} 条数据。")
 操作验证：
 在终端运行 python d20_chunking.py。
@@ -213,71 +213,71 @@ print(f"🎉 入库成功！当前数据库中总共有 {collection.count()} 条
 python
 import os
 os.environ["HF_ENDPOINT"] = "https://hf-mirror.com"
-
+﻿
 import chromadb
 from sentence_transformers import SentenceTransformer
-
+﻿
 # 1. 加载模型和数据库
 model = SentenceTransformer("BAAI/bge-small-zh-v1.5")
 client = chromadb.PersistentClient(path="./chroma_db")
 collection = client.get_collection(name="sop_knowledge_base")
-
+﻿
 # 2. 准备我们的“考题”和“标准答案（Expected Source）”
 # 这些题目是根据你 D19 造的假数据生成的
 queries = [
-    {"question": "电子餐牌屏幕不亮，应该检查什么？", "expected_source": "d19_docs/dirty_test.md"},
-    {"question": "设备不亮，怎么检查电源？", "expected_source": "d19_docs/note_1.md"},
-    {"question": "网络不通，怎么测试？", "expected_source": "d19_docs/note_1.md"},
-    # 你可以继续加题目，凑够 20 题。这里先用 3 题演示逻辑。
+    {"question": "电子餐牌屏幕不亮，应该检查什么？", "expected_source": "d19_docs/dirty_test.md"},
+    {"question": "设备不亮，怎么检查电源？", "expected_source": "d19_docs/note_1.md"},
+    {"question": "网络不通，怎么测试？", "expected_source": "d19_docs/note_1.md"},
+    # 你可以继续加题目，凑够 20 题。这里先用 3 题演示逻辑。
 ]
-
+﻿
 # 3. 计算 Hit@K 和 MRR 的函数
 def evaluate(queries: list[dict], top_k=3):
-    hit = 0
-    reciprocal_ranks = []
-    
-    print("\n=== 开始测试检索效果 ===")
-    for q in queries:
-        # 把问题变成向量
-        query_emb = model.encode([q["question"]]).tolist()
-        
-        # 去数据库检索
-        results = collection.query(
-            query_embeddings=query_emb,
-            n_results=top_k,
-            include=["documents", "metadatas", "distances"],
-        )
-        
-        # 提取来源列表
-        sources = [m["source"] for m in results["metadatas"][0]]
-        
-        # 计算 Hit@k (Top-3 里有正确来源吗？)
-        is_hit = q["expected_source"] in sources
-        if is_hit:
-            hit += 1
-            
-        # 计算 MRR (正确来源排在第几？)
-        rr = 0.0
-        for rank, src in enumerate(sources, start=1):
-            if src == q["expected_source"]:
-                rr = 1.0 / rank
-                break
-        reciprocal_ranks.append(rr)
-        
-        # 打印这题的详细结果
-        status = "✅ 命中" if is_hit else "❌ 未命中"
-        print(f"问题: {q['question']}")
-        print(f"  {status} | 期望来源: {q['expected_source']}")
-        print(f"  实际召回: {sources}")
-        print(f"  MRR得分: {rr:.2f}\n")
-
-    # 计算平均值
-    hit_at_k = hit / len(queries)
-    mrr = sum(reciprocal_ranks) / len(queries)
-    print(f"================ 评估总结 ================")
-    print(f"最终 Hit@{top_k}: {hit_at_k:.2%}")
-    print(f"最终 MRR: {mrr:.3f}")
-
+    hit = 0
+    reciprocal_ranks = []
+    
+    print("\n=== 开始测试检索效果 ===")
+    for q in queries:
+        # 把问题变成向量
+        query_emb = model.encode([q["question"]]).tolist()
+        
+        # 去数据库检索
+        results = collection.query(
+            query_embeddings=query_emb,
+            n_results=top_k,
+            include=["documents", "metadatas", "distances"],
+        )
+        
+        # 提取来源列表
+        sources = [m["source"] for m in results["metadatas"][0]]
+        
+        # 计算 Hit@k (Top-3 里有正确来源吗？)
+        is_hit = q["expected_source"] in sources
+        if is_hit:
+            hit += 1
+            
+        # 计算 MRR (正确来源排在第几？)
+        rr = 0.0
+        for rank, src in enumerate(sources, start=1):
+            if src == q["expected_source"]:
+                rr = 1.0 / rank
+                break
+        reciprocal_ranks.append(rr)
+        
+        # 打印这题的详细结果
+        status = "✅ 命中" if is_hit else "❌ 未命中"
+        print(f"问题: {q['question']}")
+        print(f"  {status} | 期望来源: {q['expected_source']}")
+        print(f"  实际召回: {sources}")
+        print(f"  MRR得分: {rr:.2f}\n")
+﻿
+    # 计算平均值
+    hit_at_k = hit / len(queries)
+    mrr = sum(reciprocal_ranks) / len(queries)
+    print(f"================ 评估总结 ================")
+    print(f"最终 Hit@{top_k}: {hit_at_k:.2%}")
+    print(f"最终 MRR: {mrr:.3f}")
+﻿
 # 执行测试
 evaluate(queries, top_k=3)
 操作验证：

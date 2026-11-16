@@ -1,9 +1,9 @@
 # 🚀 D16 总结：SQL 索引优化与 Docker 容器化全链路交付
-## 🎯 一、 今日战果（产出清单）﻿
+## 🎯 一、 今日战果（产出清单）
 1. **RAG 项目数据库底座**：编写了 `schema.sql`，建好了 `documents`、`chunks`、`tickets` 三张表，并理清了它们之间的外键约束与联合索引。
 2. **SQL 执行计划分析**：通过 `EXPLAIN` 验证了最左前缀原则，亲眼对比了全表扫描（`type=ALL`）与走索引（`type=ref`）、覆盖索引（`Using index`）的巨大差异。
 3. **生产级 Dockerfile**：将 D15 的 FastAPI 服务打包成镜像，使用了多阶段构建（减小体积）、非 root 用户（提升安全）、并配置了 `HEALTHCHECK`。
-4. **容器编排**：编写 `docker-compose.yml`，把 FastAPI 和 MySQL 串联起来，实现了数据卷持久化和依赖健康检查。﻿
+4. **容器编排**：编写 `docker-compose.yml`，把 FastAPI 和 MySQL 串联起来，实现了数据卷持久化和依赖健康检查。
 ---
 ## 🧠 二、 知识图谱（核心认知升级）
 ### 1. SQL 优化：不是背命令，是看“证据”
@@ -43,7 +43,7 @@
 > **满分回答**：`type=ALL` 说明发生了全表扫描，性能极差，通常是因为没有索引或违反了最左前缀。`Using index` 说明触发了覆盖索引，查询所需的所有列都在索引树上，不需要回表查主键，这是最理想的状态。
 
 
-Docker 方面，AI 应用交付岗要求能写出非 root、多阶段构建、带健康检查的生产级 Dockerfile，而不是 FROM python:3.9 一把梭。docker compose 要能把 FastAPI 和 MySQL 编排在一起，并且理解 depends_on 不保证 MySQL 已就绪、需要用 condition: service_healthy 配合 mysqladmin ping。Volume 持久化是必考：容器删了数据不能丢。
+Docker 方面，AI 应用交付岗要求能写出非 root、多阶段构建、带健康检查的生产级 Dockerfile，而不是 FROM python:3.9 一把梭。docker compose 要能把 FastAPI 和 MySQL 编排在一起，并且理解 depends_on 不保证 MySQL 已就绪、需要用 condition: service_healthy 配合 mysqladmin ping。Volume 持久化是必考：容器删了数据不能丢。﻿﻿
 二、上午（3h）：SQL 速通——建库建表 + CRUD + JOIN + EXPLAIN
 任务 1（约 40 分钟）：建 knowledge_base 库和三张表
 为什么要做：RAG 项目的“文档 → 切分块 → 工单”天然对应三张表。面试官问“你 RAG 项目的数据库怎么设计的”，你需要能画出 documents、chunks、tickets 的表结构和关系，而不是只说“用了 Chroma”。
@@ -54,7 +54,7 @@ sudo mysql -u root -p
 sql
 CREATE DATABASE IF NOT EXISTS knowledge_base DEFAULT CHARSET utf8mb4;
 USE knowledge_base;
-
+﻿
 CREATE TABLE documents (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
@@ -62,7 +62,7 @@ CREATE TABLE documents (
     file_path VARCHAR(500),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
+﻿
 CREATE TABLE chunks (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     document_id BIGINT UNSIGNED NOT NULL,
@@ -74,7 +74,7 @@ CREATE TABLE chunks (
     KEY idx_doc_chunk (document_id, chunk_index),
     CONSTRAINT fk_chunks_doc FOREIGN KEY (document_id) REFERENCES documents(id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
+﻿
 CREATE TABLE tickets (
     id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
@@ -96,12 +96,12 @@ INSERT INTO documents (title, source_type, file_path) VALUES
 ('运维SOP-打印机故障', 'markdown', '/docs/printer.md'),
 ('门店网络排障手册', 'pdf', '/docs/network.pdf'),
 ('工单处理规范', 'docx', '/docs/ticket.docx');
-
+﻿
 INSERT INTO chunks (document_id, chunk_index, content, token_count) VALUES
 (1, 0, '打印机卡纸时先断电，再打开后盖取出纸张。', 20),
 (1, 1, '如果反复卡纸，检查搓纸轮是否磨损。', 18),
 (2, 0, '门店网络不通时，先 ping 网关，再检查交换机端口。', 25);
-
+﻿
 INSERT INTO tickets (title, description, status, priority) VALUES
 ('打印机卡纸', '3号机反复卡纸', 0, 2),
 ('门店断网', '收银台无法联网', 0, 3),
@@ -110,35 +110,35 @@ INSERT INTO tickets (title, description, status, priority) VALUES
 sql
 -- 1. 查询所有 open 状态的工单
 SELECT * FROM tickets WHERE status = 0;
-
+﻿
 -- 2. 按优先级降序查询 open 工单
 SELECT * FROM tickets WHERE status = 0 ORDER BY priority DESC;
-
+﻿
 -- 3. 查询每个文档的 chunk 数量
 SELECT d.title, COUNT(c.id) AS chunk_count
 FROM documents d
 LEFT JOIN chunks c ON d.id = c.document_id
 GROUP BY d.id, d.title;
-
+﻿
 -- 4. 查询某个文档的第 0 个 chunk
 SELECT * FROM chunks WHERE document_id = 1 AND chunk_index = 0;
-
+﻿
 -- 5. 查询最近创建的 3 张工单
 SELECT * FROM tickets ORDER BY created_at DESC LIMIT 3;
-
+﻿
 -- 6. 更新某张工单的状态
 UPDATE tickets SET status = 1 WHERE id = 1;
-
+﻿
 -- 7. 删除某个文档及其 chunks（先删 chunks 再删 document，或依赖外键级联）
 DELETE FROM chunks WHERE document_id = 3;
 DELETE FROM documents WHERE id = 3;
-
+﻿
 -- 8. 统计各状态工单数量
 SELECT status, COUNT(*) AS cnt FROM tickets GROUP BY status;
-
+﻿
 -- 9. 查询标题包含“打印机”的工单
 SELECT * FROM tickets WHERE title LIKE '%打印机%';
-
+﻿
 -- 10. 查询有 chunk 的文档（INNER JOIN）
 SELECT DISTINCT d.id, d.title
 FROM documents d
@@ -159,12 +159,12 @@ EXPLAIN SELECT * FROM chunks WHERE document_id = 1 AND chunk_index = 0;
 sql
 -- 只给 chunk_index，不给 document_id：联合索引失效
 EXPLAIN SELECT * FROM chunks WHERE chunk_index = 0;
-预期 type=ALL，key=NULL。这就是最左前缀原则：跳过最左列，后面的列在 B+ 树里是无序的，无法用索引。
+预期 type=ALL，key=NULL。这就是最左前缀原则：跳过最左列，后面的列在 B+ 树里是无序的，无法用索引。﻿
 步骤 4：验证“覆盖索引避免回表”
 sql
 -- 查询列全部包含在联合索引中
 EXPLAIN SELECT document_id, chunk_index FROM chunks WHERE document_id = 1;
-观察 Extra 列：应该出现 Using index（覆盖索引），而不是 Using index condition（需要回表）。这是面试高频得分点。
+观察 Extra 列：应该出现 Using index（覆盖索引），而不是 Using index condition（需要回表）。这是面试高频得分点。﻿
 验收标准：截图保存 type=ALL 和 type=ref 两次 EXPLAIN 的对比；能口述“为什么 WHERE chunk_index = 0 不走索引，而 WHERE document_id = 1 走索引”。
 大厂追问：“LIKE '%打印机%' 能走索引吗？LIKE '打印机%' 呢？”（前者不能，后者能，因为前缀通配符破坏了最左前缀的有序性。）
 上午的 Git 提交
@@ -181,7 +181,7 @@ FROM python:3.10-slim AS builder
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
-
+﻿
 FROM python:3.10-slim
 WORKDIR /app
 COPY --from=builder /install /usr/local
@@ -200,10 +200,10 @@ __pycache__/
 *.pyc
 .env
 关键点解释（面试时能讲出来）：
-* 多阶段构建：builder 阶段装依赖，最终镜像只拷贝 /install，不带编译工具，镜像更小。
+* 多阶段构建：builder 阶段装依赖，最终镜像只拷贝 /install，不带编译工具，镜像更小。﻿
 * 非 root 用户：USER appuser，容器逃逸时攻击面更小。
 * HEALTHCHECK：让编排系统知道服务是否真的活着，而不是进程在但 /health 不通。
-* 依赖层缓存：COPY requirements.txt 在 COPY . . 之前，依赖不变时构建秒完成。
+* 依赖层缓存：COPY requirements.txt 在 COPY . . 之前，依赖不变时构建秒完成。﻿
 验收：
 bash
 cd d15_api
@@ -232,7 +232,7 @@ sudo docker stop d15-api-test && docker rm d15-api-test
 创建 docker-compose.yml（放在 d15_api/ 同级或项目根目录）：
 yaml
 version: "3.9"
-
+﻿
 services:
   mysql:
     image: mysql:8.0
@@ -251,7 +251,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
-
+﻿
   api:
     build: ./d15_api
     ports:
@@ -261,12 +261,12 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
-
+﻿
 volumes:
   mysql_data:
 关键点解释：
-* condition: service_healthy ：depends_on 默认只保证 MySQL 容器启动，不保证能接受连接。加上健康检查条件后，api 会等 MySQL 真正 ready 再启动。
-* Volume 持久化：mysql_data 挂在 /var/lib/mysql，删掉容器数据还在。
+* condition: service_healthy ：depends_on 默认只保证 MySQL 容器启动，不保证能接受连接。加上健康检查条件后，api 会等 MySQL 真正 ready 再启动。﻿
+* Volume 持久化：mysql_data 挂在 /var/lib/mysql，删掉容器数据还在。﻿
 * 初始化 SQL：./d16_sql/schema.sql 挂到 /docker-entrypoint-initdb.d/，MySQL 首次启动会自动执行建表。
 启动与验证：
 bash
